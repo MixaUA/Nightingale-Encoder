@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="uk"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Соловейковий шифр</title>
+<style>
+:root{--bg:#f6f7f9;--fg:#1a1d23;--card:#fff;--ac:#2a6df4;--mu:#6b7280;--bd:#d9dde3;--ok:#1f9d4d;--er:#d33}
+@media (prefers-color-scheme:dark){:root{--bg:#12151a;--fg:#e6e8ec;--card:#1b1f27;--ac:#6ea0ff;--mu:#9aa3b2;--bd:#2c323d;--ok:#4cc38a;--er:#ff7b72}}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,sans-serif}
+main{max-width:760px;margin:0 auto;padding:12px;padding-top:max(12px,env(safe-area-inset-top));padding-bottom:max(12px,env(safe-area-inset-bottom))}
+h1{font-size:18px;margin:4px 0 8px}h2{font-size:14px;margin:0 0 8px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:10px;margin-bottom:10px}
+button{padding:8px 12px;border:1px solid var(--bd);border-radius:8px;background:var(--card);color:var(--fg);font:inherit}
+button.p{background:var(--ac);color:#fff;border-color:var(--ac)}button:disabled{opacity:.4}
+.row{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;align-items:center}
+textarea{width:100%;box-sizing:border-box;background:var(--bg);color:var(--fg);border:1px solid var(--bd);border-radius:6px;padding:6px;font:15px/1.4 system-ui,sans-serif;resize:none;overflow:auto}
+#txt,#out,#live{height:64px}#log{height:clamp(120px,30vh,220px);max-height:220px;font:12px/1.35 ui-monospace,monospace;white-space:pre-wrap}
+#libSt{font-size:13px;color:var(--mu)}#libSt.ok{color:var(--ok)}#libSt.err{color:var(--er)}
+label{font-size:12px;color:var(--mu)}
+input[type=number]{width:56px;padding:4px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--fg)}
+.chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;max-height:140px;overflow-y:auto}
+.chip{border:1px solid var(--bd);border-radius:6px;padding:2px 6px;font:12px/1.2 ui-monospace,monospace;background:var(--bg);text-align:center;min-width:46px;cursor:pointer}
+.chip b{display:block;font:600 15px/1.2 system-ui,sans-serif}.chip small{color:var(--mu)}
+.chip.on{background:var(--ac);border-color:var(--ac);color:#fff}.chip.on small{color:#fff}
+#now{font:12px/1.4 ui-monospace,monospace;color:var(--mu);margin-top:6px;min-height:17px}
+.tk{box-sizing:content-box;width:300px;max-width:100%;overflow:hidden;white-space:pre;display:flex;justify-content:flex-end;
+  font:16px/1.5 ui-monospace,"DejaVu Sans Mono",Menlo,Consolas,monospace;font-variant-ligatures:none;
+  background:#0d1117;color:#7ee787;border:1px solid var(--bd);border-radius:4px}
+.tkm{color:#8b949e;margin-top:2px}.tkm .q{color:#ff7b72;font-weight:700}.tki{white-space:pre;flex:none}.tki i{display:inline-block;width:var(--cw,9.6px);text-align:center;font-style:normal}
+details summary{cursor:pointer;color:var(--mu);font-size:13px}
+</style></head><body><main>
+<h1>Соловейковий шифр</h1>
+<div class="card"><div id="libSt">…</div>
+<div id="scFallback" style="display:none;margin-top:8px"><label>Файл партитури (solovey-score.json):</label> <input type="file" id="fsc" accept=".json,application/json"></div></div>
+
+<div class="card">
+<h2>Кодування: текст → аудіо</h2>
+<textarea id="txt" placeholder="Текст для кодування"></textarea>
+<div class="row"><button class="p" id="bEnc" disabled>Закодувати</button><button id="bPlay" disabled>▶ Відтворити</button><button id="bStop">■</button><button id="bWav" disabled>↓ WAV</button>
+<label>Гучність <input type="range" id="vol" min="5" max="100" value="50" style="width:110px"> <span id="volv">50%</span></label></div>
+<div id="now"></div><div class="chips" id="chips"></div>
+</div>
+
+<div class="card">
+<h2>Розкодування: файл → текст</h2>
+<input type="file" id="fd" accept="audio/*">
+<div class="row"><button class="p" id="bDec" disabled>Розкодувати</button></div>
+<textarea id="out" readonly placeholder="Розкодований текст" style="margin-top:8px"></textarea>
+</div>
+
+<div class="card">
+<h2>Живе розпізнавання: мікрофон → текст</h2>
+<div class="row"><button class="p" id="bLive" disabled>● Слухати</button><button id="bLiveStop" disabled>■ Стоп</button></div>
+<div id="holdSt" style="font-size:13px;color:var(--mu);margin:6px 0;min-height:17px"></div>
+<div id="liveSt" style="font-size:13px;color:var(--mu);margin:6px 0"></div>
+<div class="tk" id="tkT"><div class="tki" id="tkTi"></div></div>
+<div class="tk tkm" id="tkM"><div class="tki" id="tkMi"></div></div>
+<div class="row" style="gap:10px"><span id="tkInfo" style="font-size:12px;color:var(--mu)"></span>
+<label>поріг сумніву × <input id="tkTh" type="number" value="3" step="0.5"></label>
+<button id="tkLoop">▶ По колу</button><button id="tkStop">■</button></div>
+<textarea id="live" readonly placeholder="Розпізнаний текст" style="margin-top:8px"></textarea>
+</div>
+
+<details class="card"><summary>Журнал</summary>
+<textarea id="log" readonly style="margin-top:8px"></textarea>
+<div class="row"><button id="bCopy">Копіювати журнал</button><button id="bClr">Очистити</button></div></details>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+const log=t=>{const l=$('#log');l.value+=t+'\n';if(l.value.length>60000)l.value=l.value.slice(-40000);l.scrollTop=l.scrollHeight};
+// Розкладка: символ → номер коліна у вихідному записі (порядок за часом)
+const MAP={' ':5,'о':35,'а':19,'н':3,'і':23,'в':11,'и':29,'т':42,'р':13,'е':4,'с':24,'к':41,'л':33,'д':45,'у':15,'м':28,'п':2,'я':9,'з':34,'ь':1,'б':12,'г':46,'й':27,'ч':40,'х':26,'ж':30,'ц':31,'ш':39,'ю':36,'є':10,'ї':22,'щ':8,'ф':38,"'":14,'ґ':18};
+const SYMS=Object.keys(MAP);
+const SEP='~';   // роздільник кінця тексту при зациклюванні: необов'язковий, береться з партитури, якщо там є коліно з ключем «~»
+const M=24,NFFT=1024,HOPS=.02,FMIN=1000,FMAX=10000,TRIM_DB=35,FLOOR_DB=50,BAND=.25,HOP=.005,WIN=.01,NOISE_DB=12,LOW_CONF=2,REJECT_RATIO=1.4,PAD=.1;
+let ctx=null,bank=null,lib=null,sig=null,src=null,rec=[],clock=null,raf=0,hl=-1,gainNode=null;
+const ACCEPT_DIST_MAX=25;   // справжні коліна в журналах мають відстань до ~14 (пробіл, «ю»), шум і хибні збіги: 21–50
+const DUR_MAX=1.7;   // найбільше відношення тривалості живого коліна до шаблону
+const PRM={gap:1200,depth:35,hp:1000,lp:7000,side:2000,tgt:-15,pmax:.5,boost:12};   // параметри нарізки, розкодування й вирівнювання
+const P=()=>PRM;
+const ac=()=>ctx=ctx||(()=>{const A=window.AudioContext||window.webkitAudioContext;try{return new A({latencyHint:'playback',sampleRate:48000})}catch(e){return new A({latencyHint:'playback'})}})();
+const mono=b=>{const x=new Float32Array(b.length);for(let c=0;c<b.numberOfChannels;c++){const d=b.getChannelData(c);for(let i=0;i<b.length;i++)x[i]+=d[i]/b.numberOfChannels}return x};
+const sy=c=>c===' '?'␣':c;
+const pad=i=>String(i).padStart(2,'0');   // двозначний номер для журналу й фішок (без нього кодування падає з помилкою «pad is not defined»)
+const rt=r=>isFinite(r)?r.toFixed(2):'∞';
+const b64=u=>{let s='';for(let i=0;i<u.length;i+=32768)s+=String.fromCharCode.apply(null,u.subarray(i,i+32768));return btoa(s)};
+const ub64=s=>{const t=atob(s),u=new Uint8Array(t.length);for(let i=0;i<t.length;i++)u[i]=t.charCodeAt(i);return u};
+
+// ===== Спектр і порівняння =====
+function fft(re,im){
+  const n=re.length;
+  for(let i=1,j=0;i<n;i++){let b=n>>1;for(;j&b;b>>=1)j^=b;j^=b;if(i<j){let t=re[i];re[i]=re[j];re[j]=t;t=im[i];im[i]=im[j];im[j]=t}}
+  for(let len=2;len<=n;len<<=1){const a=-2*Math.PI/len,wr=Math.cos(a),wi=Math.sin(a),h=len>>1;
+    for(let i=0;i<n;i+=len){let cr=1,ci=0;for(let j=0;j<h;j++){const u=i+j,v=u+h,vr=re[v]*cr-im[v]*ci,vi=re[v]*ci+im[v]*cr;re[v]=re[u]-vr;im[v]=im[u]-vi;re[u]+=vr;im[u]+=vi;const t=cr*wr-ci*wi;ci=cr*wi+ci*wr;cr=t}}}
+}
+const HANN=new Float32Array(NFFT);for(let i=0;i<NFFT;i++)HANN[i]=.5-.5*Math.cos(2*Math.PI*i/(NFFT-1));
+function buildBank(sr){
+  const h2m=f=>2595*Math.log10(1+f/700),m2h=m=>700*(Math.pow(10,m/2595)-1),fmax=Math.min(FMAX,sr/2*.95),m0=h2m(FMIN),m1=h2m(fmax),pts=[];
+  for(let i=0;i<M+2;i++)pts.push(m2h(m0+(m1-m0)*i/(M+1)));
+  const bins=NFFT/2+1,bk=[];
+  for(let m=0;m<M;m++){const l=pts[m],c=pts[m+1],r=pts[m+2],k0=Math.max(0,Math.floor(l*NFFT/sr)),k1=Math.min(bins-1,Math.ceil(r*NFFT/sr)),w=new Float32Array(k1-k0+1);
+    for(let k=k0;k<=k1;k++){const f=k*sr/NFFT;w[k-k0]=Math.max(0,f<=c?(f-l)/(c-l):(r-f)/(r-c))}
+    bk.push({k0,w})}
+  return bk;
+}
+// Відбиток: обрізана лог-мел-спектрограма без середнього по смугах
+function features(x,sr){
+  const hop=Math.round(HOPS*sr),nf=Math.floor((x.length-NFFT)/hop)+1;if(nf<3)return null;
+  const re=new Float32Array(NFFT),im=new Float32Array(NFFT),pw=new Float32Array(NFFT/2+1),mel=new Float32Array(nf*M),tot=new Float32Array(nf);
+  for(let f=0;f<nf;f++){
+    const o=f*hop;for(let i=0;i<NFFT;i++){re[i]=x[o+i]*HANN[i];im[i]=0}
+    fft(re,im);for(let k=0;k<=NFFT/2;k++)pw[k]=re[k]*re[k]+im[k]*im[k];
+    let sum=0;
+    for(let m=0;m<M;m++){const b=bank[m];let s=0;for(let k=0;k<b.w.length;k++)s+=b.w[k]*pw[b.k0+k];mel[f*M+m]=10*Math.log10(s+1e-12);sum+=s}
+    tot[f]=10*Math.log10(sum+1e-12);
+  }
+  let mx=-Infinity;for(let f=0;f<nf;f++)if(tot[f]>mx)mx=tot[f];
+  const noise=Array.from(tot).sort((a,b)=>a-b)[Math.floor(nf*.2)];
+  let a=0,z=nf-1;
+  const trim=t=>{a=0;while(a<nf&&tot[a]<t)a++;z=nf-1;while(z>a&&tot[z]<t)z--;return z-a+1};
+  let n=trim(Math.max(mx-TRIM_DB,noise+10));
+  // Запасний варіант: у сегменті майже немає тиші (стабільний свист), 20-й перцентиль потрапляє в саме коліно,
+  // і правило «шум+10 дБ» відкидає все. Тоді обрізаємо лише за глибиною TRIM_DB від піку.
+  if(n<3)n=trim(mx-TRIM_DB);
+  if(n<3)return null;
+  let mm=-Infinity;for(let i=a*M;i<(z+1)*M;i++)if(mel[i]>mm)mm=mel[i];
+  const floor=mm-FLOOR_DB,out=new Float32Array(n*M),mean=new Float32Array(M);
+  for(let f=0;f<n;f++)for(let m=0;m<M;m++){const v=Math.max(mel[(a+f)*M+m],floor);out[f*M+m]=v;mean[m]+=v/n}
+  for(let f=0;f<n;f++)for(let m=0;m<M;m++)out[f*M+m]-=mean[m];
+  return{f:out,n};
+}
+// Однобічна вартість: a — живий звук, b — шаблон. Сторонній шум лише додає енергію (a>b), тому цей бік штрафується слабше;
+// брак енергії там, де має бути звук (a<b), штрафується повністю. На синтетичних перевірках із шумом це піднімало запас у ~1.3–1.4 раза
+const DTW_LAM=.25;
+function dtw(a,b){
+  const n=a.n,m=b.n;if(n>2.5*m||m>2.5*n)return 1e6;
+  const band=Math.max(Math.abs(n-m),Math.ceil(BAND*Math.max(n,m)));
+  let prev=new Float64Array(m+1).fill(Infinity),cur=new Float64Array(m+1);prev[0]=0;
+  for(let i=1;i<=n;i++){cur.fill(Infinity);const lo=Math.max(1,i-band),hi=Math.min(m,i+band),ao=(i-1)*M;
+    for(let j=lo;j<=hi;j++){const bo=(j-1)*M;let d=0;for(let q=0;q<M;q++){const t=a.f[ao+q]-b.f[bo+q];d+=t<0?t*t:DTW_LAM*t*t}d/=M;cur[j]=d+Math.min(prev[j],prev[j-1],cur[j-1])}
+    const t=prev;prev=cur;cur=t}
+  return prev[m]/(n+m);
+}
+
+// ===== Єдина сегментація: її використовують і нарізка, і розкодування =====
+function envelope(x,sr){
+  const h=Math.round(HOP*sr),w=Math.round(WIN*sr),n=Math.max(0,Math.floor((x.length-w)/h)+1),e=new Float32Array(n);
+  for(let i=0;i<n;i++){let s=0;const o=i*h;for(let j=0;j<w;j++){const v=x[o+j];s+=v*v}e[i]=10*Math.log10(s/w+1e-12)}
+  return e;
+}
+const HP_Q=[0.5412,1.3066];   // добротності двох каскадів ФВЧ Баттерворта 4-го порядку: плоска смуга пропускання, 24 дБ на октаву
+async function hpf(x,sr,f,lp){
+  if(!(f>0))return x;
+  const oc=new OfflineAudioContext(1,x.length,sr),s=oc.createBufferSource(),b=oc.createBuffer(1,x.length,sr);
+  b.copyToChannel(x,0);s.buffer=b;
+  let node=s;
+  for(const q of HP_Q){const fl=oc.createBiquadFilter();fl.type='highpass';fl.frequency.value=f;fl.Q.value=20*Math.log10(q);node.connect(fl);node=fl}   // Q у дБ
+  // Верхня межа: 99.9 % енергії співу нижче 6 кГц, усе вище для детектора лише шум (шурхіт, брязкіт, шиплячі)
+  if(lp>0&&lp<sr*.45){const fl=oc.createBiquadFilter();fl.type='lowpass';fl.frequency.value=lp;fl.Q.value=20*Math.log10(Math.SQRT1_2);node.connect(fl);node=fl}
+  node.connect(oc.destination);s.start();
+  return (await oc.startRendering()).getChannelData(0);
+}
+async function findKnees(x,sr,p){
+  const e=envelope(await hpf(x,sr,p.hp,p.lp),sr),h=Math.round(HOP*sr),w=Math.round(WIN*sr);
+  let ref=-Infinity;for(const v of e)if(v>ref)ref=v;
+  const noise=Array.from(e).sort((a,b)=>a-b)[Math.floor(e.length*.2)]||-120,thr=Math.max(ref-p.depth,noise+NOISE_DB),kn=[];
+  let k=null,gs=-1;
+  for(let i=0;i<e.length;i++){
+    if(e[i]>=thr){
+      if(!k){k={s:i,e:i,dip:0};kn.push(k)}
+      else{
+        if(gs>=0){const ms=(i-gs+1)*HOP*1000;if(ms>=p.gap){k={s:i,e:i,dip:0};kn.push(k);gs=-1;continue}if(ms>k.dip)k.dip=ms}
+        k.e=i;
+      }
+      gs=-1;
+    }else if(k&&gs<0)gs=i;
+  }
+  return{kn:kn.map(q=>({ss:q.s*h,se:Math.min(x.length,q.e*h+w),dip:q.dip})),thr,ref};
+}
+function segFeat(x,sr,k){
+  const a=Math.max(0,k.ss-Math.round(PAD*sr)),z=Math.min(x.length,k.se+Math.round(PAD*sr));
+  return{ft:features(x.subarray(a,z),sr),t0:a/sr,t1:z/sr,a,z};
+}
+function lvl(y,sr){
+  let pk=0;for(let i=0;i<y.length;i++){const a=Math.abs(y[i]);if(a>pk)pk=a}
+  const w=Math.round(.05*sr);let r=-Infinity;
+  for(let o=0;o+w<=y.length;o+=w){let s=0;for(let j=0;j<w;j++)s+=y[o+j]*y[o+j];const d=10*Math.log10(s/w+1e-12);if(d>r)r=d}
+  return{pk,r50:r};
+}
+
+// ===== Розкодування (та сама сегментація і той самий відбиток, що й для шаблонів) =====
+async function decodeSig(x,p,raw){
+  const sr=ctx.sampleRate,{kn}=await findKnees(x,sr,p),items=[];items.skipped=[];
+  // Усе, що значно коротше за найкоротше коліно бібліотеки, вважаємо випадковим звуком (клацання, шум), як і в живому режимі.
+  // raw=true вимикає цей відсів (для перевірки бібліотеки, де треба бачити всі ділянки)
+  let minK=Infinity;for(const c of SYMS)minK=Math.min(minK,lib[c].ft.n*HOPS);
+  const minDur=Math.max(.3,.5*minK);
+  for(const k of kn){
+    if(!raw&&(k.se-k.ss)/sr<minDur){items.skipped.push({t:k.ss/sr,d:(k.se-k.ss)/sr});continue}
+    const s=segFeat(x,sr,k),it={t0:s.t0,t1:s.t1,sym:'?',ratio:0,second:''};
+    if(s.ft){
+      const ds=SYMS.map(c=>[dtw(s.ft,lib[c].ft),c]).sort((a,b)=>a[0]-b[0]);
+      // Фазовий пошук: кадрова сітка відбитка може бути зсунута щодо шаблону до 10 мс,
+      // тому 4 найближчі кандидати перевіряються ще на 7 зсувів по 2.5 мс
+      const fs=[];for(let j=1;j<8;j++){const f=features(x.subarray(s.a+j*Math.round(sr*.0025),s.z),sr);if(f)fs.push(f)}
+      for(const q of ds.slice(0,4))for(const f of fs){const d=dtw(f,lib[q[1]].ft);if(d<q[0])q[0]=d}
+      ds.sort((a,b)=>a[0]-b[0]);
+      // ds[0][0]>=1e5: жоден шаблон не підходить за довжиною: це не коліно абетки, залишається «?»
+      if(ds[0][0]<1e5){it.sym=ds[0][1];it.second=ds[1][1];it.ratio=ds[1][0]/ds[0][0]}
+    }
+    items.push(it);
+  }
+  return items;
+}
+function assemble(syms){
+  let n=0;for(const c of syms)n+=lib[c].y.length;
+  const y=new Float32Array(n),r=[],sr=ctx.sampleRate;let o=0;
+  for(const c of syms){r.push({sym:c,t0:o/sr,t1:(o+lib[c].y.length)/sr});y.set(lib[c].y,o);o+=lib[c].y.length}
+  return{y,r};
+}
+function wavBytes(y,sr){
+  const b=new ArrayBuffer(44+y.length*2),d=new DataView(b),S=(o,t)=>{for(let i=0;i<t.length;i++)d.setUint8(o+i,t.charCodeAt(i))};
+  S(0,'RIFF');d.setUint32(4,36+y.length*2,true);S(8,'WAVEfmt ');d.setUint32(16,16,true);d.setUint16(20,1,true);d.setUint16(22,1,true);
+  d.setUint32(24,sr,true);d.setUint32(28,sr*2,true);d.setUint16(32,2,true);d.setUint16(34,16,true);S(36,'data');d.setUint32(40,y.length*2,true);
+  for(let i=0;i<y.length;i++){const v=Math.max(-1,Math.min(1,y[i]));d.setInt16(44+i*2,Math.max(-32768,Math.min(32767,Math.round(v*32768))),true)}
+  return new Uint8Array(b);
+}
+
+// ===== Крок 2: кодування і відтворення =====
+const vol=()=>+$('#vol').value/100;
+$('#vol').oninput=()=>{$('#volv').textContent=`${Math.round(vol()*100)}%`;if(gainNode)gainNode.gain.value=vol()};
+function stop(){if(src){const s=src;src=null;try{s.stop()}catch(e){}}}
+async function play(y,onend){
+  stop();await ctx.resume();
+  const b=ctx.createBuffer(1,y.length,ctx.sampleRate);b.copyToChannel(y,0);
+  const s=ctx.createBufferSource();gainNode=ctx.createGain();gainNode.gain.value=vol();s.buffer=b;s.connect(gainNode);gainNode.connect(ctx.destination);
+  s.onended=()=>{if(src===s){src=null;onend()}};
+  const t0=ctx.currentTime;s.start(t0);src=s;return()=>ctx.currentTime-t0;
+}
+function setHL(i){
+  if(i===hl)return;const o=document.getElementById('chip'+hl);if(o)o.classList.remove('on');hl=i;
+  const e=document.getElementById('chip'+i);if(e){e.classList.add('on');e.scrollIntoView({block:'nearest',inline:'nearest'})}
+}
+function tick(){
+  const t=clock?clock():-1;let k=-1;
+  for(let i=0;i<rec.length;i++)if(t>=rec[i].t0&&t<rec[i].t1){k=i;break}
+  setHL(k);if(k>=0)$('#now').textContent=`▶ №${k+1} · «${sy(rec[k].sym)}» · коліно #${lib[rec[k].sym].idx}`;
+  raf=requestAnimationFrame(tick);
+}
+function endHL(){cancelAnimationFrame(raf);setHL(-1);$('#now').textContent=''}
+function renderChips(){
+  const box=$('#chips');box.textContent='';
+  rec.forEach((it,i)=>{
+    const d=document.createElement('div'),b=document.createElement('b'),s=document.createElement('small');
+    d.className='chip';d.id='chip'+i;b.textContent=sy(it.sym);s.textContent=`#${i+1} · ${pad(lib[it.sym].idx)}`;
+    d.appendChild(b);d.appendChild(s);
+    d.onclick=async()=>{stop();cancelAnimationFrame(raf);setHL(-1);$('#now').textContent=`▶ окремо: «${sy(it.sym)}» · коліно #${lib[it.sym].idx}`;await play(lib[it.sym].y,()=>{$('#now').textContent=''})};
+    box.appendChild(d);
+  });
+  hl=-1;
+}
+$('#bEnc').onclick=()=>{
+  const t=$('#txt').value.toLowerCase().replace(/[ʼ’‘`´]/g,"'").replace(/[∼～˜]/g,SEP).replace(/\s+/g,' '),syms=[],skip=new Set();
+  for(const ch of t){if(lib[ch])syms.push(ch);else skip.add(ch)}
+  if(skip.size)log(`Пропущено символи поза абеткою: ${Array.from(skip).map(c=>JSON.stringify(c)).join(' ')}`);
+  if(!syms.length){log('Нема що кодувати');return}
+  if(lib[SEP]&&syms[syms.length-1]!==SEP){syms.push(SEP);log(`Додано роздільник «${SEP}» у кінець тексту`)}
+  const a=assemble(syms);sig=a.y;rec=a.r;
+  log(`\n-- Кодування: «${syms.join('')}» --\nЗакодовано ${syms.length} символів, ${(sig.length/ctx.sampleRate).toFixed(1)} с`);
+  rec.forEach((it,i)=>log(`${pad(i+1)} | ${sy(it.sym)} | коліно #${lib[it.sym].idx} | ${it.t0.toFixed(2)}–${it.t1.toFixed(2)} с`));
+  renderChips();$('#bWav').disabled=false;$('#bPlay').disabled=false;
+};
+$('#bWav').onclick=()=>{
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([wavBytes(sig,ctx.sampleRate)],{type:'audio/wav'}));
+  a.download='solovey.wav';document.body.appendChild(a);a.click();a.remove();
+};
+$('#bPlay').onclick=async()=>{clock=await play(sig,endHL);cancelAnimationFrame(raf);raf=requestAnimationFrame(tick)};
+$('#bStop').onclick=()=>{stop();endHL()};
+
+// ===== Крок 3: розкодування файлу =====
+$('#fd').onchange=()=>{$('#bDec').disabled=!(lib&&$('#fd').files.length)};
+$('#bDec').onclick=async()=>{
+  const f=$('#fd').files[0];if(!f)return;
+  log(`\n-- Розкодування: ${f.name} --`);
+  let x;try{x=mono(await ctx.decodeAudioData(await f.arrayBuffer()))}catch(e){log('ПОМИЛКА: не вдалось декодувати файл');return}
+  const its=await decodeSig(x,P());
+  log(`Знайдено колін: ${its.length}\n№ | час, с | символ | запас × | другий варіант`);
+  if(its.skipped.length)log(`Відкинуто коротких звуків (клацання, шум): ${its.skipped.length} — ${its.skipped.map(q=>q.t.toFixed(2)+'с/'+(q.d*1000).toFixed(0)+'мс').join(', ')}`);
+  its.forEach((it,i)=>log(`${pad(i+1)} | ${it.t0.toFixed(2)}–${it.t1.toFixed(2)} | ${sy(it.sym)} | ${rt(it.ratio)}${it.ratio<LOW_CONF?' ⚠ СУМНІВНО':''} | ${sy(it.second)}`));
+  const text=its.map(i=>i.sym).join(''),low=its.filter(i=>i.ratio<LOW_CONF).length;
+  $('#out').value=text;log(`Текст: «${text}»${low?` (сумнівних: ${low})`:''}`);
+  tkClear();for(const it of its){TK.text+=it.sym;TK.mon+=(it.sym!=='?'&&it.ratio>=(+$('#tkTh').value||3))?'+':'?'}tkLoopStart();
+};
+
+// ===== Синтетичні коліна з партитури =====
+// Партитура зберігає для кожного коліна набір ліній: висота і гучність у часі.
+// Тут із них збирається звук (чисті тони), потім стиснення гучних нот, підсилення
+// верхів і відлуння (ті самі налаштування, що були в інструменті під час збереження),
+// далі гучність вирівнюється так само, як при нарізці справжнього запису.
+// Після цього бібліотека виглядає так само, як зібрана з запису, тож кодування,
+// розкодування й перевірки працюють без змін.
+
+// Читання ліній одного коліна з base64.
+// Формат однієї лінії: кількість точок (2 байти), перший кадр відносно початку кліпу (4 байти),
+// далі на кожну точку 5 байтів: крок у кадрах (1), частота ×4 в Гц (2), гучність у сотих дБ
+// відносно найгучнішої складової запису (2).
+function readLines(d,n,maxAmp,fade){
+  const u=ub64(d),dv=new DataView(u.buffer),tr=[];
+  let off=0;
+  for(let k=0;k<n;k++){
+    const pn=dv.getUint16(off,true);off+=2;
+    let fr=dv.getInt32(off,true);off+=4;
+    const F=[],Q=[],A=[];
+    for(let i=0;i<pn;i++){
+      fr+=dv.getUint8(off);off+=1;
+      F.push(fr);
+      Q.push(dv.getUint16(off,true)/4);off+=2;
+      A.push(maxAmp*Math.pow(10,dv.getInt16(off,true)/100/20));off+=2;
+    }
+    // Нульові точки на початку й в кінці лінії: плавний вхід і вихід, без клацань
+    F.unshift(F[0]-fade);Q.unshift(Q[0]);A.unshift(0);
+    F.push(F[F.length-1]+fade);Q.push(Q[Q.length-1]);A.push(0);
+    tr.push({fr:F,fq:Q,am:A});
+  }
+  return tr;
+}
+
+// Збирання звуку коліна з ліній: кожна лінія = одна синусоїда, частота й гучність
+// лінійно змінюються між точками, фаза накопичується безперервно.
+function synthKnee(tr,len,fx,sc,sr){
+  const out=new Float32Array(len),thr=fx.compThresh*sc.maxAmp;
+  for(const t of tr){
+    // Приглушення гучних ліній і підсилення верхніх (перехід 3000–5000 Гц, як в інструменті)
+    const am=t.am.map((v,i)=>{
+      const q=v<=thr?v:thr*Math.pow(v/thr,fx.compPower);
+      const k=Math.max(0,Math.min(1,(t.fq[i]-(fx.brightHz-1000))/2000));
+      return q*(1+(fx.brightGain-1)*k*k*(3-2*k));
+    });
+    let ph=0;
+    for(let p=0;p<t.fr.length-1;p++){
+      const s0=t.fr[p]*sc.hop+sc.fft/2,s1=t.fr[p+1]*sc.hop+sc.fft/2,L=s1-s0;
+      for(let i=s0;i<s1;i++){
+        if(i<0||i>=len)continue;
+        const u=(i-s0)/L,f=t.fq[p]+(t.fq[p+1]-t.fq[p])*u,a=am[p]+(am[p+1]-am[p])*u;
+        ph+=2*Math.PI*f/sr;
+        out[i]+=a*Math.sin(ph);
+      }
+    }
+  }
+  return out;
+}
+
+// «Відбиток» кімнати: затихаючий шум, що з часом темнішає (власний генератор, щоб був однаковий щоразу)
+function makeIR(fx,sr){
+  const len=Math.floor(fx.roomSec*sr),pre=Math.floor(.01*sr),ir=new Float32Array(len);
+  let seed=12345,lp=0;
+  for(let i=pre;i<len;i++){
+    seed=(seed*1664525+1013904223)>>>0;
+    const n=seed/4294967296*2-1,t=(i-pre)/(len-pre);
+    lp+=Math.max(.12,1-.88*t)*(n-lp);
+    ir[i]=lp*Math.exp(-6.9*t);
+  }
+  return ir;
+}
+
+// Накладання відлуння (рахує браузер): чистий звук + частка відлуння
+async function roomify(dry,fx,sr){
+  const oc=new OfflineAudioContext(1,dry.length,sr),b=oc.createBuffer(1,dry.length,sr),s=oc.createBufferSource();
+  b.copyToChannel(dry,0);s.buffer=b;
+  const ir=makeIR(fx,sr),ib=oc.createBuffer(1,ir.length,sr),cv=oc.createConvolver(),w=oc.createGain();
+  ib.copyToChannel(ir,0);cv.normalize=true;cv.buffer=ib;w.gain.value=fx.roomMix;
+  s.connect(oc.destination);s.connect(cv);cv.connect(w);w.connect(oc.destination);s.start();
+  return new Float32Array((await oc.startRendering()).getChannelData(0));
+}
+
+// ===== Живе розпізнавання з мікрофона =====
+// Звук з мікрофона надходить шматками. З нього на льоту рахується гучність (так само, як
+// при нарізці файлу), стежимо за порогом, і коли коліно закінчилось (тиша не коротша за
+// «Паузу між колінами»), воно відразу розпізнається тим самим відбитком і тим самим DTW,
+// що й розкодування файлу, а символ дописується в рядок. Отже, символ з'являється приблизно
+// через довжину паузи після кінця коліна.
+
+const LIVE_SEC=40;          // скільки секунд звуку тримаємо в пам'яті (коліно до ~11 с + запас)
+let LV=null;                // стан поточного сеансу
+let liveStream=null,liveNode=null,liveSp=null,liveSrc=null,liveTimer=0;
+
+// Код «захоплювача» звуку: працює в окремому потоці й передає шматки по 1024 відліки
+const LIVE_WORKLET=`
+class Cap extends AudioWorkletProcessor{
+  constructor(){super();this.n=4096;this.b=new Float32Array(this.n);this.k=0}
+  process(inputs){
+    const c=inputs[0][0];if(!c)return true;
+    for(let i=0;i<c.length;i++){this.b[this.k++]=c[i];if(this.k===this.n){const o=this.b;this.b=new Float32Array(this.n);this.k=0;this.port.postMessage(o,[o.buffer])}}
+    return true;
+  }
+}
+registerProcessor('cap',Cap);`;
+
+// Розпізнавання одного коліна: грубо-точний пошук.
+// 1) DTW на подвоєному кроці кадрів (у 4 рази дешевше) для всіх шаблонів;
+// 2) точний DTW лише для тих, чия груба відстань ≤ 2× найкращої (від 4 до 10 шаблонів): на тестах результат збігався з повним перебором;
+// 3) вирівнювання фази кадрової сітки: найкращі шаблони порівнюються ще з трьома їхніми зсунутими варіантами (вони пораховані при побудові бібліотеки).
+// Віддаємо керування сторінці (малювання, прийом звуку) без затримки таймера
+const _mc=new MessageChannel();let _res=null;_mc.port1.onmessage=()=>{const r=_res;_res=null;if(r)r()};
+const yieldUi=()=>new Promise(r=>{_res=r;_mc.port2.postMessage(0)});
+const KMIN=4,KMAX=10,KF=2;
+function decim(ft){const n=Math.floor(ft.n/2);if(n<3)return ft;const f=new Float32Array(n*M);for(let i=0;i<n;i++)for(let q=0;q<M;q++)f[i*M+q]=(ft.f[2*i*M+q]+ft.f[(2*i+1)*M+q])/2;return{f,n}}
+const ft2=c=>lib[c].ft2||(lib[c].ft2=decim(lib[c].ft));
+async function matchKnee(x,sr,fast){
+  // Порівняння займає десятки-сотні мілісекунд; щоб бігучий рядок і кнопки не підвисали, кожні ~6 мс віддаємо керування сторінці
+  let ts=performance.now();const slice=async()=>{if(performance.now()-ts>6){await yieldUi();ts=performance.now()}};
+  const ft=features(x,sr);if(!ft)return null;
+  await slice();
+  const fd=decim(ft),co=[];
+  for(const c of SYMS){co.push([dtw(fd,ft2(c)),c]);await slice()}
+  co.sort((a,b)=>a[0]-b[0]);
+  const kmax=fast?4:KMAX;let k=0;
+  while(k<co.length&&k<kmax&&(k<Math.min(KMIN,kmax)||co[k][0]<=KF*co[0][0]))k++;
+  const ds=[];
+  for(const q of co.slice(0,k)){ds.push([dtw(ft,lib[q[1]].ft),q[1]]);await slice()}
+  ds.sort((a,b)=>a[0]-b[0]);
+  if(!fast){
+    for(const q of ds.slice(0,3))for(const f of (lib[q[1]].fts||[])){const d=dtw(ft,f);if(d<q[0])q[0]=d;await slice()}
+    ds.sort((a,b)=>a[0]-b[0]);
+  }
+  if(ds[0][0]>=1e5)return{sym:'?',second:'',ratio:0,dist:Infinity};
+  return{sym:ds[0][1],second:ds[1][1],ratio:ds[1][0]/ds[0][0],dist:ds[0][0]};
+}
+
+// Початок сеансу: чистий стан, фільтр, найкоротше коліно бібліотеки
+function liveReset(){
+  const sr=ctx.sampleRate,p=P(),cap=Math.round(LIVE_SEC*sr);
+  // Усе, що значно коротше за найкоротше коліно бібліотеки, вважаємо випадковим звуком (клацання)
+  let minK=Infinity;for(const c of SYMS)minK=Math.min(minK,lib[c].ft.n*HOPS);
+  // Фільтр верхніх частот (як у пошуку колін у файлі): прибирає низький гул перед підрахунком гучності
+  let hp=[];
+  if(p.hp>0)for(const Q of HP_Q){
+    const w0=2*Math.PI*p.hp/sr,al=Math.sin(w0)/(2*Q),cs=Math.cos(w0),a0=1+al;
+    hp.push({b0:(1+cs)/2/a0,b1:-(1+cs)/a0,b2:(1+cs)/2/a0,a1:-2*cs/a0,a2:(1-al)/a0,x1:0,x2:0,y1:0,y2:0});
+  }
+  // Смуговий фільтр 1–7 кГц для детектора: нижче 1 кГц гул і голоси, вище 7 кГц лише шум; спів лежить у 1.2–6 кГц
+  if(p.lp>0&&p.lp<sr*.45){
+    const w0=2*Math.PI*p.lp/sr,al=Math.sin(w0)/(2*Math.SQRT1_2),cs=Math.cos(w0),a0=1+al;
+    hp.push({b0:(1-cs)/2/a0,b1:(1-cs)/a0,b2:(1-cs)/2/a0,a1:-2*cs/a0,a2:(1-al)/a0,x1:0,x2:0,y1:0,y2:0});
+  }
+  if(!hp.length)hp=null;
+  LV={sr,p,cap,h:Math.round(HOP*sr),w:Math.round(WIN*sr),raw:new Float32Array(cap),flt:new Float32Array(cap),n:0,hp,
+      E:[],eBase:0,nextHop:0,thr:null,kn:null,quiet:0,minDur:Math.max(.3,.5*minK),text:'',level:-120,songLv:[],songT:0};
+}
+
+// Прийом шматка звуку
+function liveFeed(c){
+  const L=LV;if(!L)return;
+  let k=L.n%L.cap;
+  for(let i=0;i<c.length;i++){
+    const x=c[i];let y=x;
+    L.raw[k]=x;
+    if(L.hp)for(const f of L.hp){const u=y;y=f.b0*u+f.b1*f.x1+f.b2*f.x2-f.a1*f.y1-f.a2*f.y2;f.x2=f.x1;f.x1=u;f.y2=f.y1;f.y1=y}
+    L.flt[k]=y;L.n++;if(++k===L.cap)k=0;
+  }
+  // Нові кроки огинаючої: гучність у дБ у вікні 10 мс з кроком 5 мс
+  while(L.nextHop*L.h+L.w<=L.n){
+    const o=L.nextHop*L.h;let s=0,ix=o%L.cap;
+    for(let j=0;j<L.w;j++){const v=L.flt[ix];s+=v*v;if(++ix===L.cap)ix=0}
+    L.E.push(10*Math.log10(s/L.w+1e-12));
+    liveStep(L.nextHop);
+    L.nextHop++;
+  }
+  // Щоб масив не ріс безкінечно, старі кроки (понад ~40 с) відкидаємо
+  if(L.E.length>8000){L.E.splice(0,2000);L.eBase+=2000}
+}
+
+// Один крок стеження: поріг за останніми ~20 с, початок і кінець коліна
+const HMIN=-140,HSTEP=.25,HN=640,HIST=new Uint16Array(HN);
+function liveStep(i){
+  const L=LV,e=L.E[i-L.eBase];
+  L.level=e;
+  // Поріг оновлюємо раз на 100 мс: найгучніше за останні ~20 с мінус глибина, але не нижче фону плюс запас
+  if(i%20===0&&L.E.length>=100){
+    // Процентилі за гістограмою (крок 0.25 дБ) замість сортування 4000 значень кожні 100 мс: у ~20 разів дешевше
+    const E=L.E,end=E.length,st=Math.max(0,end-4000),cnt=end-st;
+    HIST.fill(0);
+    for(let q=st;q<end;q++){let b=Math.floor((E[q]-HMIN)/HSTEP);b=b<0?0:b>=HN?HN-1:b;HIST[b]++}
+    // Опора: 99.5-й процентиль (≈ найгучніші 100 мс), а не абсолютний максимум: одне клацання не піднімає поріг на 20 с
+    const k1=Math.floor(cnt*.995),k2=Math.floor(cnt*.2);let acc=0,ref=HMIN,noise=HMIN,gotN=false;
+    for(let b=0;b<HN;b++){const c=HIST[b];if(!c)continue;acc+=c;const v=HMIN+(b+.5)*HSTEP;if(!gotN&&acc>k2){noise=v;gotN=true}if(acc>k1){ref=v;break}}
+    // Після трьох прийнятих колін опора не може перевищувати їхній типовий рівень (медіана останніх п'яти) + 3 дБ:
+    // кашель, грюкіт чи гучне слово довше за 100 мс більше не піднімають поріг на 20 с і не вкорочують коліна.
+    // Без прийнятих колін понад 60 с повертаємось до опори за вікном.
+    if(L.songLv.length>=3&&L.n-L.songT<60*L.sr){const sv=L.songLv.slice().sort((a,b)=>a-b);ref=Math.min(ref,sv[sv.length>>1]+3)}
+    L.thr=Math.max(ref-L.p.depth,noise+NOISE_DB);
+  }
+  if(L.thr===null)return;                     // перші ~0.5 с: калібрування
+  if(e>=L.thr){
+    if(!L.kn)L.kn={s:i,e:i};else L.kn.e=i;
+    L.quiet=0;
+    // Захист від безперервного шуму: надто довгу «подію» відкидаємо
+    if((i-L.kn.s)*HOP>25){log('   (відкинуто: звук триває понад 25 с без пауз)');L.kn=null}
+  }else if(L.kn){
+    L.quiet+=HOP*1000;
+    if(L.quiet>=L.p.gap){const k=L.kn;L.kn=null;L.quiet=0;liveClose(k)}
+  }
+}
+
+// Вирізає звук між кроками огинаючої a0..b0 (з відступами) і розпізнає; повертає {r,dur,dr,why}. fast: швидкий режим для перебору
+async function liveTry(L,a0,b0,fast,minRatio=REJECT_RATIO){
+  const dur=(b0-a0+1)*HOP+WIN;
+  const pad=Math.round(PAD*L.sr),ss=a0*L.h,se=Math.min(L.n,b0*L.h+L.w);
+  const a=Math.max(0,ss-pad),z=Math.min(L.n,se+pad);
+  if(a<L.n-L.cap)return{dur,why:'не вмістилось у пам\'ять'};
+  const x=new Float32Array(z-a);
+  for(let j=0;j<x.length;j++)x[j]=L.raw[(a+j)%L.cap];
+  const r=await matchKnee(x,L.sr,fast);
+  if(!r)return{dur,why:'закоротке для розпізнавання'};
+  if(r.sym==='?'||r.ratio<minRatio)return{r,dur,why:`не схоже на жодне коліно · запас ${rt(r.ratio)} · відстань ${r.dist>1e5?'—':r.dist.toFixed(1)} · ${dur.toFixed(2)} с`};
+  if(r.dist>ACCEPT_DIST_MAX)return{r,dur,why:`занадто велика відстань до шаблону «${sy(r.sym)}» (${r.dist.toFixed(1)}), це шум; запас ${rt(r.ratio)} тут оманливий · ${dur.toFixed(2)} с`};
+  // Тривалість живого коліна має збігатися з тривалістю шаблону (для правильних збігів 0.93–1.30, для злипання 1.87)
+  const dr=(dur+2*PAD)/(lib[r.sym].ft.n*HOPS);
+  if(dr>DUR_MAX)return{r,dur,dr,why:`коліно ${dur.toFixed(2)} с у ${dr.toFixed(2)} раза довше за шаблон «${sy(r.sym)}», схоже на злипання звуків`};
+  return{r,dur,dr,why:'',a0,b0};
+}
+function liveAccept(L,t){
+  const {r,dur,dr}=t;
+  // Рівень співу: пік прийнятого коліна. За ним поріг відрізняє спів від випадкових гучних звуків (кашель, грюкіт), які не є колінами
+  let pk=-Infinity;for(let q=Math.max(0,t.a0-L.eBase);q<=t.b0-L.eBase;q++){const v=L.E[q];if(v!==undefined&&v>pk)pk=v}
+  if(pk>-Infinity){L.songLv.push(pk);if(L.songLv.length>5)L.songLv.shift();L.songT=L.n}
+  L.text+=r.sym;$('#live').value=L.text;tkPush(r.sym,r.ratio);
+  log(`Живе: ${sy(r.sym)} | запас ${rt(r.ratio)}${r.ratio<LOW_CONF?' ⚠ СУМНІВНО':''} | другий варіант ${sy(r.second)} | коліно ${dur.toFixed(2)} с (×${dr.toFixed(2)} шаблону) | відстань ${r.dist.toFixed(2)}`);
+}
+
+// Рятування коліна із суміші зі сторонніми звуками. Подія закривається лише після паузи gap (1.2 с), тому шум, що почався
+// поруч, склеюється з коліном в один сегмент, який не схожий ні на що. Розбиваємо подію на спалахи (за паузами ≥ RESCUE_SPLIT мс),
+// перебираємо суміжні групи спалахів, найкращу групу перевіряємо повним розпізнаванням; решту ліворуч і праворуч шукаємо так само.
+// Кожну групу оцінюємо один раз (кеш), а між оцінками віддаємо керування, щоб сторінка й прийом звуку не зависали.
+const RESCUE_SPLIT=250, RESCUE_RATIO=1.6, RESCUE_MIN_RATIO=1.25, RESCUE_DIST=16, RESCUE_MAX_BURSTS=7, RESCUE_MAX_CALLS=40, RESCUE_BUDGET_MS=2500, RESCUE_LEVELS=[0,8,16];
+async function liveRescue(L,k){
+  if(k.s-L.eBase<0)return false;
+  const ev=L.E.slice(k.s-L.eBase,k.e-L.eBase+1),thr0=L.thr,sp=Math.round(RESCUE_SPLIT/1000/HOP);   // знімок огинаючої: масив може зсунутись, поки чекаємо
+  let minT=Infinity,maxT=0;for(const c of SYMS){const t=lib[c].ft.n*HOPS;minT=Math.min(minT,t);maxT=Math.max(maxT,t)}
+  let calls=0,bestFail=null;const memo=new Map(),tStart=performance.now();
+  const bursts=up=>{
+    let bs=[],cur=null;
+    for(let q=0;q<ev.length;q++){
+      if(ev[q]>=thr0+up){const i=k.s+q;if(cur&&i-cur.e<=sp)cur.e=i;else{cur={s:i,e:i};bs.push(cur)}}
+    }
+    bs=bs.filter(b=>(b.e-b.s+1)*HOP+WIN>=.08);                         // зовсім короткі спалахи (клацання) відкидаємо
+    if(bs.length>RESCUE_MAX_BURSTS){const keep=new Set(bs.slice().sort((a,b)=>(b.e-b.s)-(a.e-a.s)).slice(0,RESCUE_MAX_BURSTS));bs=bs.filter(b=>keep.has(b))}
+    return bs;
+  };
+  const evalG=async(a,b,full)=>{
+    const key=a+'-'+b+(full?'f':'');
+    if(memo.has(key))return memo.get(key);
+    if(!full){if(calls>=RESCUE_MAX_CALLS||performance.now()-tStart>RESCUE_BUDGET_MS)return null;calls++}   // і за кількістю, і за часом: на повільних телефонах перебір урізається сам
+    const t=await liveTry(L,a,b,!full,RESCUE_MIN_RATIO);memo.set(key,t);
+    if(t.r&&t.r.sym!=='?'&&(!bestFail||t.r.ratio>bestFail.r.ratio))bestFail=t;
+    return t;
+  };
+  // Справжній збіг: або великий запас, або (помірний запас і мала відстань до шаблону). Шум у журналах має відстань 30–50,
+  // а справжні коліна, зокрема пробіл із малим запасом, до ~14, тому відстань надійно відрізняє їх там, де запас ще малий
+  const okT=t=>{
+    if(!t||t.why||t.dr<.7)return false;
+    return t.r.ratio>=RESCUE_RATIO||(t.r.ratio>=RESCUE_MIN_RATIO&&t.r.dist<=RESCUE_DIST);
+  };
+  for(const up of RESCUE_LEVELS){
+    const bs=bursts(up);
+    if(bs.length<1||(up===0&&bs.length<2))continue;                      // на нульовому рівні розбивати нічого
+    const found=[],left=[];
+    const go=async arr=>{
+      if(!arr.length)return;
+      const cands=[];let loc=null;
+      for(let i=0;i<arr.length;i++)for(let j=i;j<arr.length;j++){
+        if(up===0&&i===0&&j===arr.length-1&&arr===bs)continue;           // повну подію вже пробували
+        const w=(arr[j].e-arr[i].s+1)*HOP+WIN+2*PAD;
+        if(w<.75*minT||w>DUR_MAX*maxT)continue;                          // довжина неможлива для жодного шаблону
+        const t=await evalG(arr[i].s,arr[j].e,false);
+        if(t&&t.r&&t.r.sym!=='?'&&(!loc||t.r.ratio>loc.r.ratio))loc=t;
+        if(t&&okT(t))cands.push({i,j,t});
+      }
+      cands.sort((a,b)=>b.t.r.ratio-a.t.r.ratio);
+      for(const c of cands.slice(0,3)){
+        const f=await evalG(arr[c.i].s,arr[c.j].e,true);                 // підтвердження повним розпізнаванням
+        if(okT(f)){found.push({s:arr[c.i].s,t:f});await go(arr.slice(0,c.i));await go(arr.slice(c.j+1));return}
+      }
+      const span=((arr[arr.length-1].e-arr[0].s+1)*HOP+WIN).toFixed(2);
+      left.push(loc?`   (залишок ${span} с без збігу: найкращий «${sy(loc.r.sym)}» · запас ${rt(loc.r.ratio)} · відстань ${loc.r.dist.toFixed(1)} · ${loc.dur.toFixed(2)} с)`:`   (залишок ${span} с без кандидатів: довжина не підходить жодному шаблону)`);
+    };
+    await go(bs);
+    if(found.length){
+      found.sort((a,b)=>a.s-b.s);
+      for(const f of found){log(`   (врятовано з-поміж сторонніх звуків${up?`, поріг +${up} дБ`:''})`);liveAccept(L,f.t)}
+      left.forEach(m=>log(m));
+      return true;
+    }
+  }
+  if(bestFail)log(`   (рятування не вдалось; найближчий кандидат «${sy(bestFail.r.sym)}» · запас ${rt(bestFail.r.ratio)} · відстань ${bestFail.r.dist.toFixed(1)} · ${bestFail.dur.toFixed(2)} с)`);
+  return false;
+}
+
+// Коліно закінчилось: ставимо в чергу на розпізнавання. Черга зберігає порядок символів, навіть якщо рятування триває кілька секунд
+let liveQ=Promise.resolve(),liveBusyN=0;
+function liveClose(k){
+  const L=LV;liveBusyN++;
+  liveQ=liveQ.then(()=>liveJob(L,k)).catch(e=>log('ПОМИЛКА розпізнавання: '+(e&&e.message||e))).then(()=>{liveBusyN--});
+}
+async function liveJob(L,k){
+  const dur=(k.e-k.s+1)*HOP+WIN;
+  if(dur<L.minDur){log(`   (пропущено короткий звук ${dur.toFixed(2)} с)`);return}
+  const t=await liveTry(L,k.s,k.e,false);
+  if(!t.why){liveAccept(L,t);return}
+  // Рятування пропускаємо, якщо вимкнено або пристрій не встигає за звуком (у черзі вже кілька подій): так слабкий гаджет не відстає
+  if(liveBusyN>3){log(`   (рятування пропущено: розпізнавання не встигає за звуком) (відкинуто: ${t.why})`);return}
+  if(await liveRescue(L,k))return;
+  log(`   (відкинуто: ${t.why})`);
+}
+
+// Рядок стану: рівень, поріг і що відбувається зараз
+function liveStatus(){
+  const L=LV;if(!L)return;
+  $('#liveSt').textContent=`рівень ${L.level.toFixed(0)} дБ · поріг ${L.thr===null?'калібрую…':L.thr.toFixed(0)+' дБ'} · ${L.kn?'звучить коліно':'тиша'} · розпізнано символів: ${L.text.length}`;
+}
+
+let workletReady=false,liveBusy=false;
+async function liveStart(){
+  if(!lib){log('Живе розпізнавання: спершу збудуйте бібліотеку.');return false}
+  if(liveStream||liveBusy)return false;
+  liveBusy=true;
+  try{
+    ac();await ctx.resume();
+    // Вимикаємо «покращення» мікрофона: вони вирізають стабільні тони, тобто саме наш спів
+    try{liveStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}})}
+    catch(e){log('ПОМИЛКА: немає доступу до мікрофона');return false}
+    liveReset();$('#live').value='';tkClear();wlAcquire();
+    liveSrc=ctx.createMediaStreamSource(liveStream);
+    try{
+      // Модуль реєструємо один раз на AudioContext: повторне додавання падало б і мовчки вмикало запасний шлях
+      if(!workletReady){await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([LIVE_WORKLET],{type:'application/javascript'})));workletReady=true}
+      liveNode=new AudioWorkletNode(ctx,'cap');
+      liveNode.port.onmessage=e=>liveFeed(e.data);
+      liveSrc.connect(liveNode);liveNode.connect(ctx.destination);
+      log('Захоплення звуку: AudioWorklet (звук не губиться, навіть коли сторінка зайнята)');
+    }catch(e){
+      // Запасний шлях для середовищ без AudioWorklet
+      log('Захоплення звуку: ScriptProcessor (запасний шлях: за завантаження сторінки звук може губитись)');
+      liveSp=ctx.createScriptProcessor(2048,1,1);
+      liveSp.onaudioprocess=ev=>liveFeed(ev.inputBuffer.getChannelData(0).slice());
+      liveSrc.connect(liveSp);liveSp.connect(ctx.destination);
+    }
+    $('#bLive').disabled=true;$('#bLiveStop').disabled=false;
+    liveTimer=setInterval(liveStatus,200);
+    log(`\n-- Живе розпізнавання: слухаю (${ctx.sampleRate} Гц, пауза між колінами ${LV.p.gap} мс, найкоротше коліно бібліотеки ≈ ${(LV.minDur*2).toFixed(2)} с) --`);
+    return true;
+  }finally{liveBusy=false}
+}
+function liveStop(){
+  // Відкрите коліно (звук ще йшов у момент зупинки) дорозпізнаємо, а не губимо
+  if(liveStream&&LV&&LV.kn){const k=LV.kn;LV.kn=null;LV.quiet=0;try{liveClose(k)}catch(e){}}
+  wlRelease();
+  clearInterval(liveTimer);
+  try{if(liveNode){liveNode.disconnect();liveNode.port.onmessage=null}if(liveSp){liveSp.disconnect();liveSp.onaudioprocess=null}if(liveSrc)liveSrc.disconnect()}catch(e){}
+  if(liveStream)liveStream.getTracks().forEach(t=>t.stop());
+  liveNode=liveSp=liveSrc=liveStream=null;
+  $('#bLiveStop').disabled=true;$('#bLive').disabled=!lib;
+  const Ls=LV;liveQ=liveQ.then(()=>log(`-- Живе розпізнавання зупинено. Текст: «${Ls?Ls.text:''}» --`));
+  clearTimeout(TK.idle);tkLoopStart();
+}
+$('#bLive').onclick=()=>{liveStart()};
+$('#bLiveStop').onclick=liveStop;
+
+// ===== Екран не гасне під час слухання =====
+// Спершу штатний Screen Wake Lock API (потрібен HTTPS: GitHub Pages підходить). Якщо його немає або браузер відмовив,
+// вмикаємо запасний шлях: майже невидиме беззвучне відео з canvas, яке система вважає відтворенням медіа.
+// Жодних дотиків до екрана не потрібно, тож вони більше не псують розпізнавання.
+const WL={lock:null,vid:null,cv:null,tick:0,want:false};
+const holdSt=t=>{const h=$('#holdSt');if(h)h.textContent=t};
+function wlVideoStart(){
+  try{
+    if(!WL.vid){
+      const c=document.createElement('canvas');c.width=c.height=32;
+      if(!c.captureStream)return false;
+      const v=document.createElement('video');
+      v.muted=true;v.defaultMuted=true;v.loop=true;v.autoplay=true;
+      v.setAttribute('muted','');v.setAttribute('playsinline','');v.setAttribute('webkit-playsinline','');
+      v.style.cssText='position:fixed;right:0;bottom:0;width:2px;height:2px;opacity:.02;pointer-events:none;z-index:-1';
+      v.srcObject=c.captureStream(4);
+      document.body.appendChild(v);
+      WL.vid=v;WL.cv=c;
+    }
+    const g=WL.cv.getContext('2d');let f=0;
+    clearInterval(WL.tick);
+    // Кадр має змінюватись, інакше потік «завмирає» і система може вважати відео неактивним
+    WL.tick=setInterval(()=>{f^=1;g.fillStyle=f?'#000':'#020202';g.fillRect(0,0,32,32)},250);
+    const p=WL.vid.play();if(p&&p.catch)p.catch(()=>{});
+    return true;
+  }catch(e){return false}
+}
+function wlVideoStop(){clearInterval(WL.tick);WL.tick=0;if(WL.vid){try{WL.vid.pause()}catch(e){}}}
+async function wlAcquire(){
+  WL.want=true;
+  if(WL.lock&&!WL.lock.released)return true;
+  if('wakeLock' in navigator&&navigator.wakeLock&&navigator.wakeLock.request){
+    try{
+      const l=await navigator.wakeLock.request('screen');
+      if(!WL.want){try{l.release()}catch(e){}return false}    // слухання вже зупинили, поки чекали
+      WL.lock=l;wlVideoStop();
+      // Система знімає блокування сама, коли вкладка ховається: після повернення візьмемо знову (visibilitychange)
+      holdSt('Екран не гасне (Wake Lock)');return true;
+    }catch(e){}
+  }
+  if(wlVideoStart()){holdSt('Екран не гасне (запасний режим)');return true}
+  holdSt('Не вдалося заборонити вимкнення екрана: збільшіть час автовимкнення в налаштуваннях телефона');return false;
+}
+function wlRelease(){
+  WL.want=false;
+  try{if(WL.lock)WL.lock.release()}catch(e){}
+  WL.lock=null;wlVideoStop();holdSt('');
+}
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden)return;
+  if(ctx&&ctx.state!=='running'&&ctx.state!=='closed')ctx.resume().catch(()=>{});
+  if(liveStream&&liveStream.getAudioTracks().every(t=>t.readyState==='ended')){liveStop();return}   // система забрала мікрофон у фоні
+  if(WL.want)wlAcquire();
+});
+// Перший дотик на сторінці розблоковує аудіо (правило автозапуску)
+document.addEventListener('pointerup',()=>{if(ctx&&ctx.state!=='running'&&ctx.state!=='closed')ctx.resume().catch(()=>{})},true);
+
+// ===== Радіограма: бігучий рядок розпізнаного тексту і паралельний рядок моніторингу =====
+// Рядок 300 px моноширинним шрифтом: новий символ додається праворуч і зсуває старі ліворуч за межу вікна.
+// Нижче такий самий рядок: «+» під символом, який розпізнано впевнено, «?» під сумнівним (запас менший за поріг)
+// або нерозпізнаним. Коли нових символів немає ~12 с, після зупинки мікрофона і після розкодування файлу
+// рядки крутяться по колу: весь розпізнаний текст пробігає знову й знову, між повторами розділювач.
+const TK={text:'',mon:'',cw:9.6,CH:31,loop:false,raf:0,idle:0,speed:45,sep:'   ~   ',tail:''};
+const TK_IDLE=12000;
+const tkEsc=c=>c==='&'?'&amp;':c==='<'?'&lt;':c===' '?'&nbsp;':c;
+const tkCells=(t,mon)=>{let h='';for(const c of t)h+=(mon&&c==='?'?'<i class="q">':'<i>')+tkEsc(c)+'</i>';return h};
+function tkMeasure(){
+  const s=document.createElement('span');s.className='tk';s.style.cssText='position:absolute;visibility:hidden;width:auto;display:inline-block;max-width:none;border:0';
+  s.textContent='Ш'.repeat(20);document.body.appendChild(s);
+  const w=s.getBoundingClientRect().width/20;s.remove();
+  if(w>0){TK.cw=w;TK.CH=Math.max(1,Math.floor(300/w))}
+  document.documentElement.style.setProperty('--cw',TK.cw+'px');
+  $('#tkInfo').textContent='У вікні 300 px вміщується '+TK.CH+' символів';
+}
+function tkRender(slide){
+  $('#tkTi').innerHTML=tkCells(TK.text+TK.tail,false);$('#tkMi').innerHTML=tkCells(TK.mon+' '.repeat(TK.tail.length),true);
+  if(!slide)return;
+  for(const id of ['#tkTi','#tkMi']){
+    const e=$(id);e.style.transition='none';e.style.transform='translateX('+TK.cw+'px)';
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{e.style.transition='transform .3s ease-out';e.style.transform='translateX(0)'}));
+  }
+}
+function tkLoopStop(keep){
+  TK.loop=false;TK.tail='';cancelAnimationFrame(TK.raf);
+  for(const id of ['#tkTi','#tkMi']){const e=$(id);e.parentNode.style.justifyContent='flex-end';e.style.transition='none';e.style.transform='translateX(0)'}
+  if(!keep)tkRender(false);
+}
+// Положення рядка в циклі: s = скільки пікселів «пройшло»; x = де лівий край тексту відносно лівого краю вікна.
+// Текст повністю виїжджає за лівий край (x = −Wt) і відразу з'являється з-за правого (x = Wc), далі по колу.
+const tkPos=(s,Wc,Wt)=>Wc-(((s%(Wc+Wt))+(Wc+Wt))%(Wc+Wt));
+function tkLoopStart(){
+  if(!TK.text)return;
+  tkMeasure();tkLoopStop(true);
+  // Між кінцем тексту і його повтором показуємо «~» (якщо розпізнаний текст сам не закінчується на нього)
+  TK.tail=TK.text.endsWith(SEP)?' ':' '+SEP+' ';
+  tkRender(false);
+  const n=[...TK.text+TK.tail].length,Wt=n*TK.cw,Wc=$('#tkT').clientWidth||300;
+  // Починаємо звідти, де рядок стояв (притиснутий праворуч), щоб не було стрибка
+  const s0=Wt;
+  $('#tkTi').parentNode.style.justifyContent='flex-start';$('#tkMi').parentNode.style.justifyContent='flex-start';
+  TK.loop=true;const t0=performance.now();
+  const step=now=>{
+    if(!TK.loop)return;
+    const x=tkPos(s0+(now-t0)/1000*TK.speed,Wc,Wt)+'px';
+    $('#tkTi').style.transform='translateX('+x+')';$('#tkMi').style.transform='translateX('+x+')';
+    TK.raf=requestAnimationFrame(step);
+  };
+  TK.raf=requestAnimationFrame(step);
+}
+function tkClear(){clearTimeout(TK.idle);tkLoopStop(true);TK.text='';TK.mon='';tkRender(false)}
+function tkPush(sym,ratio){
+  const th=+$('#tkTh').value||3;
+  tkLoopStop(true);
+  TK.text+=sym;TK.mon+=(sym!=='?'&&ratio>=th)?'+':'?';
+  tkRender(true);
+  clearTimeout(TK.idle);TK.idle=setTimeout(tkIdle,TK_IDLE);
+}
+// Немає нових символів ~12 с і мікрофон вимкнено: бігучий рядок крутиться. Поки мікрофон слухає, рядок не чіпаємо.
+function tkIdle(){
+  if(liveStream)return;           // мікрофон слухає далі, його зупиняє лише кнопка «■ Стоп»
+  tkLoopStart();
+}
+$('#tkLoop').onclick=()=>{tkLoopStart()};
+$('#tkStop').onclick=()=>{clearTimeout(TK.idle);tkLoopStop(false)};
+tkMeasure();tkRender(false);
+
+// ===== Партитура: файл solovey-score.json лежить поруч з index.html =====
+const SCORE_URL='solovey-score.json';
+function setStatus(t,cls){const e=$('#libSt');e.textContent=t;e.className=cls||''}
+async function buildFromScore(o,name){
+  ac();const sr=ctx.sampleRate,p=P();bank=buildBank(sr);lib=null;
+  ['bEnc','bDec','bLive'].forEach(i=>$('#'+i).disabled=true);
+  log(`\n-- Бібліотека з партитури: ${name} --`);
+  if(o.sr!==sr){const m=`Партитура для ${o.sr} Гц, а цей пристрій дає ${sr} Гц`;log('ПОМИЛКА: '+m);setStatus(m,'err');return}
+  const fx=o.fx,sc={fft:o.fft,hop:o.hop,maxAmp:o.maxAmp},L={};
+  // Роздільник «~» додається до абетки лише коли він є в партитурі; без нього все працює як раніше
+  {const i=SYMS.indexOf(SEP),has=!!(o.t&&o.t[SEP]);
+   if(has&&i<0)SYMS.push(SEP);else if(!has&&i>=0)SYMS.splice(i,1);
+   log(has?`Роздільник «${SEP}» знайдено в партитурі: додається в кінець закодованого тексту`:`Роздільника «${SEP}» у партитурі немає (додайте коліно з ключем «${SEP}», щоб він звучав у кінці тексту)`)}
+  log(`Налаштування звуку з партитури: гучність ${fx.safePeak}, дзвінкість ${fx.brightGain}× від ${fx.brightHz} Гц, відлуння ${fx.roomMix} / ${fx.roomSec} с, приглушення ${fx.compThresh} / ${fx.compPower}`);
+  for(let n=0;n<SYMS.length;n++){
+    const s=SYMS[n],t=o.t&&o.t[s];
+    const fail=m=>{log('ПОМИЛКА: '+m);setStatus('Бібліотеку не збудовано: '+m,'err')};
+    if(!t){fail(`у партитурі немає символу «${sy(s)}»`);return}
+    try{
+      let y=await roomify(synthKnee(readLines(t.d,t.n,o.maxAmp,2),t.len,fx,sc,sr),fx,sr);
+      // Короткі плавні краї кліпу (20 мс): хвіст відлуння обрізається по межі кліпу без клацання
+      const fd=Math.round(.02*sr);
+      for(let i=0;i<fd&&i<y.length;i++){const k=i/fd;y[i]*=k;y[y.length-1-i]*=k}
+      // Вирівнювання гучності
+      const V=lvl(y,sr);
+      let g=Math.min(Math.pow(10,(p.tgt-V.r50)/20),p.pmax/(V.pk+1e-9),Math.pow(10,p.boost/20));if(!(g>0&&isFinite(g)))g=1;
+      for(let i=0;i<y.length;i++)y[i]*=g;
+      // Відбиток для розпізнавання: найдовше коліно кліпу
+      const kn=(await findKnees(y,sr,p)).kn;
+      if(!kn.length){fail(`у синтетичному кліпі «${sy(s)}» не знайдено коліна`);return}
+      let m=kn[0];for(const q of kn)if(q.se-q.ss>m.se-m.ss)m=q;
+      const sf=segFeat(y,sr,m),ft=sf.ft;
+      if(!ft){fail(`синтетичний кліп «${sy(s)}» закороткий (коліно ${((m.se-m.ss)/sr).toFixed(2)} с)`);return}
+      // Ще три фази кадрової сітки шаблону (зсув старту на 5, 10, 15 мс): рахуються один раз тут, а не на кожному живому коліні
+      const fts=[];for(let j=1;j<4;j++){const f=features(y.subarray(sf.a+j*Math.round(sr*.005),sf.z),sr);if(f)fts.push(f)}
+      L[s]={idx:t.idx,y,ft,fts};
+    }catch(e){fail(`«${sy(s)}»: ${e.message}`);return}
+    if(n%4===3){setStatus(`Будую бібліотеку: ${n+1} з ${SYMS.length}…`);log(`... ${n+1} з ${SYMS.length}`);await new Promise(r=>setTimeout(r))}
+  }
+  lib=L;
+  log(`Бібліотека готова: ${SYMS.length} символів`);
+  setStatus(`Бібліотека готова: ${SYMS.length} символів`,'ok');
+  $('#bEnc').disabled=false;$('#bLive').disabled=false;$('#bDec').disabled=!$('#fd').files.length;
+}
+async function loadScore(){
+  setStatus('Завантажую партитуру…');
+  let o;
+  try{
+    const r=await fetch(SCORE_URL,{cache:'no-cache'});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    o=await r.json();
+  }catch(e){
+    log(`Не вдалось завантажити ${SCORE_URL}: ${e.message}`);
+    setStatus(`Не вдалось завантажити ${SCORE_URL} (сторінку відкрито з диска без сервера?). Можна вибрати файл вручну.`,'err');
+    $('#scFallback').style.display='block';return;
+  }
+  await buildFromScore(o,SCORE_URL);
+}
+$('#fsc').onchange=async()=>{
+  const f=$('#fsc').files[0];if(!f)return;
+  let o;try{o=JSON.parse(await f.text())}catch(e){setStatus('Не вдалось прочитати файл партитури','err');return}
+  await buildFromScore(o,f.name);
+};
+$('#bClr').onclick=()=>{$('#log').value=''};
+$('#bCopy').onclick=async()=>{
+  const l=$('#log');try{await navigator.clipboard.writeText(l.value)}catch(e){l.select();document.execCommand('copy')}
+  $('#bCopy').textContent='Скопійовано ✓';setTimeout(()=>$('#bCopy').textContent='Копіювати журнал',1200);
+};
+loadScore();
+</script></body></html>
